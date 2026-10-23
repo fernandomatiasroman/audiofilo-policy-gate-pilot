@@ -1,0 +1,75 @@
+name: Trusted Policy Gate Pilot
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  trusted-policy-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Validate PR data using trusted workflow
+        shell: bash
+        env:
+          GH_REPO: ${{ github.repository }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import base64
+          import json
+          import os
+          import re
+          import urllib.request
+
+          repo = os.environ["GH_REPO"]
+          head_repo = os.environ["HEAD_REPO"]
+          sha = os.environ["HEAD_SHA"]
+
+          if head_repo != repo:
+              raise SystemExit("STOP_UNSUPPORTED_FORK")
+
+          if not re.fullmatch(r"[0-9a-f]{40}", sha):
+              raise SystemExit("STOP_INVALID_SHA")
+
+          url = (
+              f"https://api.github.com/repos/{repo}/"
+              f"contents/gate-input.json?ref={sha}"
+          )
+
+          request = urllib.request.Request(
+              url,
+              headers={
+                  "Authorization": f"Bearer {os.environ['GH_TOKEN']}",
+                  "Accept": "application/vnd.github+json",
+                  "X-GitHub-Api-Version": "2022-11-28",
+              },
+          )
+
+          with urllib.request.urlopen(request, timeout=15) as response:
+              document = json.load(response)
+
+          if document.get("encoding") != "base64":
+              raise SystemExit("STOP_INVALID_ENCODING")
+
+          raw = base64.b64decode(
+              document["content"], validate=False
+          )
+
+          if len(raw) > 8192:
+              raise SystemExit("STOP_INPUT_TOO_LARGE")
+
+          data = json.loads(raw)
+
+          if type(data) is not dict or data != {"ready": True}:
+              raise SystemExit("TRUSTED_POLICY_GATE=FAIL")
+
+          print(f"VALIDATED_HEAD_SHA={sha}")
+          print("TRUSTED_POLICY_GATE=PASS")
+          PY
