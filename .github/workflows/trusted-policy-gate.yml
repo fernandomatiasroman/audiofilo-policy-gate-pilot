@@ -25,6 +25,7 @@ jobs:
         run: |
           python3 - <<'PY'
           import base64
+          import binascii
           import json
           import os
           import re
@@ -102,9 +103,19 @@ jobs:
           if document.get("encoding") != "base64":
               raise SystemExit("STOP_INVALID_ENCODING")
 
-          raw = base64.b64decode(
-              document["content"], validate=True
-          )
+          encoded = document["content"]
+
+          if not isinstance(encoded, str):
+              raise SystemExit("STOP_INVALID_BASE64_CONTENT")
+
+          normalized = encoded.replace("\n", "").replace("\r", "")
+
+          try:
+              raw = base64.b64decode(
+                  normalized, validate=True
+              )
+          except (binascii.Error, ValueError):
+              raise SystemExit("STOP_INVALID_BASE64_CONTENT")
 
           if len(raw) > 8192:
               raise SystemExit("STOP_INPUT_TOO_LARGE")
