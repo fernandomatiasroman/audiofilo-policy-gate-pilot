@@ -1,0 +1,38 @@
+name: Execution Identity Probe
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  execution-identity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout proposed merge
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Record execution identities
+        shell: bash
+        env:
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          echo "=== EXECUTION_IDENTITY ==="
+          echo "PR_HEAD_SHA=$PR_HEAD_SHA"
+          echo "PR_BASE_SHA=$PR_BASE_SHA"
+          echo "GITHUB_SHA=$GITHUB_SHA"
+          echo "GITHUB_REF=$GITHUB_REF"
+          echo "CHECKOUT_SHA=$(git rev-parse HEAD)"
+          echo "CHECKOUT_TREE=$(git rev-parse HEAD^{tree})"
+          echo "WORKFLOW_AT_CHECKOUT=$(git rev-parse HEAD:.github/workflows/execution-identity-probe.yml)"
+          echo "=== TEST_RESULTS ==="
+          python3 -m unittest discover -s tests -v
+          echo "REAL_TESTS=PASS"
+          echo "=== IDENTITY_PROBE_COMPLETE ==="
