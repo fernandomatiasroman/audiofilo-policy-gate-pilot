@@ -1,0 +1,21 @@
+name: Real Tests Pilot
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  real-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout proposed code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Verify Python tests
+        run: python3 -m unittest discover -s tests -v
