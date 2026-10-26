@@ -1,0 +1,33 @@
+{
+  "schema": "TrustedPolicyV1",
+  "repository": "fernandomatiasroman/audiofilo-policy-gate-pilot",
+  "baseRef": "main",
+  "implementerLogins": ["fernandomatiasroman"],
+  "authorizedReviewers": ["audiofilo-independent-reviewer[bot]"],
+  "securityChecks": ["policy-gate", "trusted-policy-gate"],
+  "functionalChecks": { "tests": "real-tests" },
+  "checkIdentities": {
+    "policy-gate": {
+      "workflowId": 394207405,
+      "workflowPath": ".github/workflows/policy-gate.yml",
+      "job": "policy-gate",
+      "event": "pull_request"
+    },
+    "trusted-policy-gate": {
+      "workflowId": 394242357,
+      "workflowPath": ".github/workflows/trusted-policy-gate.yml",
+      "job": "trusted-policy-gate",
+      "event": "pull_request_target"
+    },
+    "real-tests": {
+      "workflowId": 394422752,
+      "workflowPath": ".github/workflows/real-tests.yml",
+      "job": "real-tests",
+      "event": "pull_request"
+    }
+  },
+  "notApplicableChecks": ["typecheck"],
+  "allowedPaths": ["src/", "tests/"],
+  "protectedPaths": [".github/", "policy/", "adapter/", "gate-input.json"],
+  "maxAttempts": 2
+}
