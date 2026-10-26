@@ -1,0 +1,79 @@
+# NIVEL 2 — publicación de la revisión. ÚNICO lugar con acceso a la clave.
+#
+# Este archivo vive en `reviewer/workflows/` a propósito: fuera de `.github/`
+# NO es un workflow activo. Instalarlo es una decisión explícita del propietario.
+#
+# Por qué `workflow_run` y no `pull_request_target`:
+#  - En `workflow_run` la DEFINICIÓN del workflow se toma siempre de la rama por
+#    defecto. Un PR no puede modificar este archivo para su propia corrida.
+#  - `actions/checkout` sin `ref` trae también la rama por defecto. El código que
+#    maneja la clave es de confianza y el contenido del PR nunca se ejecuta.
+#  - `pull_request_target` con checkout del HEAD del PR daría al código del PR
+#    un contexto con secretos. Está descartado por eso, no por conveniencia.
+#
+# Amenazas de `workflow_run` y su control:
+#  - Artefacto no confiable: `reviewer/comun.mjs` lo valida con un esquema
+#    estricto (claves exactas, longitudes, formatos) antes de usarlo.
+#  - Identidad suplantada: el `if` exige `event == 'pull_request'`, y
+#    `publicar.mjs` compara el repositorio del artefacto, el del `workflow_run`
+#    y `github.repository`.
+#  - SHA: `RUN_HEAD_SHA` debe coincidir con el SHA analizado, y además se vuelve
+#    a pedir el PR a la API para confirmar que su cabeza sigue siendo ese SHA.
+#  - Escalada de privilegios: el `GITHUB_TOKEN` del job es de SÓLO LECTURA.
+#    `contents: read` es lo mínimo que necesita `actions/checkout` para traer la
+#    rama por defecto (los scopes que no se listan quedan en `none`, así que sin
+#    esta línea el checkout falla); `actions: read` es lo mínimo para bajar el
+#    artefacto del nivel 1. Ningún permiso de escritura: no puede escribir en el
+#    repositorio ni en el PR. La revisión se publica con el token del App.
+name: reviewer-publish
+
+on:
+  workflow_run:
+    workflows: ["reviewer-analysis"]
+    types: [completed]
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: reviewer-publish-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: false
+
+jobs:
+  publicar:
+    if: >-
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Código de confianza (rama por defecto; nunca el HEAD del PR)
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Bajar el artefacto del nivel 1
+        uses: actions/download-artifact@v4
+        with:
+          name: reviewer-analysis
+          path: artefacto
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+
+      - name: Publicar la revisión con la identidad del App
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          RUN_EVENT: ${{ github.event.workflow_run.event }}
+          RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_HEAD_REPOSITORY: ${{ github.event.workflow_run.head_repository.full_name }}
+          AUDIOFILO_REVIEWER_APP_ID: ${{ vars.AUDIOFILO_REVIEWER_APP_ID }}
+          AUDIOFILO_REVIEWER_APP_PRIVATE_KEY: ${{ secrets.AUDIOFILO_REVIEWER_APP_PRIVATE_KEY }}
+          ARTIFACT: artefacto/reviewer-analysis.json
+          DRY_RUN: ${{ vars.AUDIOFILO_REVIEWER_DRY_RUN }}
+        run: node reviewer/publicar.mjs

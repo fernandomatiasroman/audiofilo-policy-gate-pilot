@@ -1,0 +1,58 @@
+# NIVEL 1 — análisis del PR. SIN acceso a la clave privada del GitHub App.
+#
+# Este archivo vive en `reviewer/workflows/` a propósito: fuera de `.github/`
+# NO es un workflow activo. Instalarlo es una decisión explícita del propietario
+# (ver reviewer/README.md).
+#
+# Garantías:
+#  - No referencia `secrets.AUDIOFILO_REVIEWER_APP_PRIVATE_KEY`. Ningún código
+#    llegado en un PR puede ejecutarse con acceso a la clave.
+#  - No hace checkout del HEAD del PR y no instala ni ejecuta nada del PR:
+#    sin `npm ci`, sin scripts de paquete, sin tests. El diff se lee por la API.
+#  - El checkout es de la rama por defecto: código de confianza.
+name: reviewer-analysis
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: reviewer-analysis-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  analizar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Código de confianza (rama por defecto, nunca el HEAD del PR)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Analizar el diff como dato
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REVIEWER_IDENTITY: audiofilo-independent-reviewer[bot]
+          POLICY_PATH: reviewer/policy.json
+          OUT: reviewer-analysis.json
+        run: node reviewer/analizar.mjs
+
+      - name: Publicar el artefacto para el nivel 2
+        uses: actions/upload-artifact@v4
+        with:
+          name: reviewer-analysis
+          path: reviewer-analysis.json
+          if-no-files-found: error
+          retention-days: 1
